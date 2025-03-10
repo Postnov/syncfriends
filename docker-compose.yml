@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  syncfriends:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # Для хранения данных в локальных файлах
+      - ./data:/app/data 
