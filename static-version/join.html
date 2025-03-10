@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Присоединиться к событию - SyncFriends</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Подключение Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <header>
+            <h1><a href="index.html">SyncFriends</a></h1>
+            <p>Присоединиться к событию</p>
+        </header>
+        
+        <main>
+            <div class="card" v-if="!eventFound">
+                <h2>Введите код события</h2>
+                
+                <form @submit.prevent="findEvent">
+                    <div class="form-group">
+                        <label for="eventCode">Код события</label>
+                        <input type="text" id="eventCode" v-model="enteredCode" placeholder="Например: ABC123" required>
+                    </div>
+                    
+                    <button type="submit" class="button primary full-width">Найти событие</button>
+                </form>
+
+                <div v-if="eventNotFound" class="error-message">
+                    <p>Событие не найдено. Проверьте код и попробуйте снова.</p>
+                </div>
+            </div>
+
+            <div class="card" v-if="eventFound">
+                <h2>{{ event.name }}</h2>
+                <p class="event-details">
+                    <span>Дата: {{ formatDate(event.date) }}</span>
+                    <span>Время: {{ event.startTime }} - {{ event.endTime }}</span>
+                    <span>Организатор: {{ event.organizerName }}</span>
+                </p>
+                
+                <form @submit.prevent="joinEvent">
+                    <div class="form-group">
+                        <label for="participantName">Ваше имя</label>
+                        <input type="text" id="participantName" v-model="participantName" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Выберите доступное для вас время</label>
+                        <div class="time-slots">
+                            <div v-for="(slot, index) in timeSlots" :key="index" class="time-slot">
+                                <input 
+                                    type="checkbox" 
+                                    :id="'slot-' + index" 
+                                    v-model="selectedSlots[index]"
+                                >
+                                <label :for="'slot-' + index">{{ slot }}</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="button primary full-width">Сохранить доступность</button>
+                </form>
+            </div>
+        </main>
+        
+        <footer>
+            <p>&copy; 2024 SyncFriends</p>
+        </footer>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>

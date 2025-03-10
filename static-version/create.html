@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Создать событие - SyncFriends</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Подключение Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <header>
+            <h1><a href="index.html">SyncFriends</a></h1>
+            <p>Создать новое событие</p>
+        </header>
+        
+        <main>
+            <div class="card">
+                <h2>Детали события</h2>
+                
+                <form @submit.prevent="createEvent">
+                    <div class="form-group">
+                        <label for="eventName">Название события</label>
+                        <input type="text" id="eventName" v-model="event.name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="eventDate">Дата события</label>
+                        <div class="quick-date-buttons">
+                            <button type="button" @click="setTodayDate" class="button small">Сегодня</button>
+                            <button type="button" @click="setTomorrowDate" class="button small">Завтра</button>
+                        </div>
+                        <input type="date" id="eventDate" v-model="event.date" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Диапазон времени</label>
+                        <div class="time-range">
+                            <label for="startTime">С:</label>
+                            <input type="time" id="startTime" v-model="event.startTime" required>
+                            
+                            <label for="endTime">До:</label>
+                            <input type="time" id="endTime" v-model="event.endTime" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="organizerName">Ваше имя</label>
+                        <input type="text" id="organizerName" v-model="event.organizerName" required>
+                    </div>
+                    
+                    <button type="submit" class="button primary full-width">Создать событие</button>
+                </form>
+            </div>
+
+            <div v-if="showSuccessMessage" class="card success-card">
+                <h3>Событие создано!</h3>
+                <p>Код вашего события: <strong>{{ eventCode }}</strong></p>
+                <div class="buttons">
+                    <a :href="'event.html?id=' + eventCode" class="button primary">Перейти к событию</a>
+                    <button @click="copyEventLink" class="button secondary">Скопировать ссылку</button>
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>&copy; 2024 SyncFriends</p>
+        </footer>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>

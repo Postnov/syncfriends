@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Просмотр события - SyncFriends</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Подключение Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <header>
+            <h1><a href="index.html">SyncFriends</a></h1>
+            <p>Просмотр события</p>
+        </header>
+        
+        <main>
+            <div v-if="!eventFound" class="card">
+                <h2>Событие не найдено</h2>
+                <p>Проверьте код события и попробуйте снова.</p>
+                <a href="join.html" class="button primary">Найти событие</a>
+            </div>
+
+            <div v-if="eventFound" class="event-container">
+                <div class="card event-header">
+                    <h2>{{ event.name }}</h2>
+                    <p class="event-details">
+                        <span>Дата: {{ formatDate(event.date) }}</span>
+                        <span>Время: {{ event.startTime }} - {{ event.endTime }}</span>
+                        <span>Организатор: {{ event.organizerName }}</span>
+                        <span>Код события: {{ eventCode }}</span>
+                    </p>
+                    <div class="event-actions">
+                        <a :href="'join.html?id=' + eventCode" class="button secondary">Добавить участника</a>
+                        <button @click="copyEventLink" class="button secondary">Скопировать ссылку</button>
+                    </div>
+                </div>
+
+                <div class="card participants-card">
+                    <h3>Участники ({{ event.participants.length }})</h3>
+                    <div class="participants-list">
+                        <div v-for="(participant, index) in event.participants" :key="index" class="participant">
+                            <span class="participant-name">{{ participant.name }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card availability-card">
+                    <h3>Доступность участников</h3>
+                    <div class="availability-chart">
+                        <div class="time-labels">
+                            <div v-for="(slot, index) in timeSlots" :key="index" class="time-label">
+                                {{ slot }}
+                            </div>
+                        </div>
+                        <div v-for="(participant, pIndex) in event.participants" :key="pIndex" class="participant-row">
+                            <div class="participant-name">{{ participant.name }}</div>
+                            <div class="availability-slots">
+                                <div 
+                                    v-for="(available, sIndex) in participant.availability" 
+                                    :key="sIndex" 
+                                    class="slot"
+                                    :class="{ 'available': available }"
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card best-time-card">
+                    <h3>Лучшее время для встречи</h3>
+                    <div v-if="bestTimeSlots.length > 0">
+                        <div v-for="(slot, index) in bestTimeSlots" :key="index" class="best-time-slot">
+                            <span>{{ timeSlots[slot] }}</span>
+                            <span class="participants-count">{{ countAvailableParticipants(slot) }} из {{ event.participants.length }} участников</span>
+                        </div>
+                    </div>
+                    <div v-else class="no-common-time">
+                        <p>Не найдено общего времени, когда все участники свободны</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>&copy; 2024 SyncFriends</p>
+        </footer>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
