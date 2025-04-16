@@ -1,18 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+// Используем Inter вместо Geist, так как с Geist возникают проблемы
+const inter = Inter({
+  subsets: ["latin", "cyrillic"],
   display: 'swap',
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  display: 'swap',
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
@@ -28,9 +23,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" className="scroll-smooth">
+    <html lang="ru" className="scroll-smooth" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900`}
+        className={`${inter.variable} antialiased min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900`}
+        suppressHydrationWarning
       >
         <header className="border-b border-gray-200 dark:border-gray-800">
           <div className="max-w-5xl mx-auto px-4 md:px-8 py-3 flex justify-between items-center">
@@ -64,7 +60,7 @@ export default function RootLayout({
                   Удобный сервис для планирования встреч и поиска оптимального времени
                 </p>
                 <p className="text-gray-500 dark:text-gray-500 text-sm">
-                  &copy; {new Date().getFullYear()} SyncFriends
+                  &copy; {new Date().getFullYear().toString()} SyncFriends
                 </p>
               </div>
               
