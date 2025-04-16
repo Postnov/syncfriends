@@ -1,14 +1,19 @@
 export interface Participant {
   name: string;
   avatarColor: string;
-  availability: string[];
+  availability: {
+    [date: string]: string[] // ключ - дата, значение - массив временных слотов
+  };
 }
 
 export interface Event {
   id: string;
   name: string;
   description: string;
-  date: string;
+  dateRange: {
+    start: string;
+    end: string;
+  };
   timeRange: {
     start: string;
     end: string;

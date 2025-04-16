@@ -34,7 +34,10 @@ interface Event {
   id: string;
   name: string;
   description: string;
-  date: string;
+  dateRange: {
+    start: string;
+    end: string;
+  };
   timeRange: {
     start: string;
     end: string;
@@ -53,6 +56,11 @@ const AVATAR_COLORS = [
   'bg-cyan-500', 'bg-teal-500', 'bg-green-500', 'bg-lime-500', 'bg-amber-500'
 ];
 
+// Объявляем интерфейс, соответствующий структуре данных
+interface AvailabilityMap {
+  [date: string]: string[];
+}
+
 export default function JoinEvent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -63,13 +71,15 @@ export default function JoinEvent() {
   const [event, setEvent] = useState<Event | null>(null);
   const [userName, setUserName] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState('');
-  const [availability, setAvailability] = useState<string[]>([]);
+  const [availability, setAvailability] = useState<AvailabilityMap>({});
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState('');
   const [step, setStep] = useState(1); // 1 - ввод имени, 2 - выбор времени
   const [alreadyUsedNames, setAlreadyUsedNames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [formattedDate, setFormattedDate] = useState<string>('');
+  const [formattedDateRange, setFormattedDateRange] = useState<string>('');
   const [formattedWeekday, setFormattedWeekday] = useState<string>('');
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
 
   // Загружаем событие при монтировании компонента
   useEffect(() => {
@@ -78,37 +88,101 @@ export default function JoinEvent() {
     }
   }, [eventId]);
 
-  // Форматирование даты на клиенте для избежания ошибок гидратации
+  // Форматирование диапазона дат на клиенте для избежания ошибок гидратации
   useEffect(() => {
-    if (event?.date) {
+    if (event?.dateRange) {
       try {
-        const date = new Date(event.date);
-        setFormattedDate(date.toLocaleDateString('ru-RU', { 
-          year: 'numeric', month: 'long', day: 'numeric' 
-        }));
-        setFormattedWeekday(date.toLocaleDateString('ru-RU', { 
-          weekday: 'long' 
-        }));
+        const startDate = new Date(event.dateRange.start);
+        const endDate = new Date(event.dateRange.end);
+        
+        if (event.dateRange.start === event.dateRange.end) {
+          // Если выбрана одна дата
+          setFormattedDateRange(startDate.toLocaleDateString('ru-RU', { 
+            year: 'numeric', month: 'long', day: 'numeric' 
+          }));
+          setFormattedWeekday(startDate.toLocaleDateString('ru-RU', { 
+            weekday: 'long' 
+          }));
+        } else {
+          // Если выбран диапазон дат
+          const startFormatted = startDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+          const endFormatted = endDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+          setFormattedDateRange(`${startFormatted} - ${endFormatted}`);
+          
+          // Для диапазона дат не отображаем день недели
+          setFormattedWeekday('');
+        }
       } catch (error) {
-        console.error('Error formatting date:', error);
-        setFormattedDate('');
+        console.error('Error formatting date range:', error);
+        setFormattedDateRange('');
         setFormattedWeekday('');
       }
     }
-  }, [event?.date]);
+  }, [event?.dateRange]);
 
   // Установка данных для режима редактирования
   useEffect(() => {
     if (isEditMode && editName && event) {
+      // Находим участника по имени
       const participant = event.participants.find(p => p.name === editName);
       if (participant) {
+        // Устанавливаем базовые данные
         setUserName(participant.name);
         setSelectedAvatar(participant.avatarColor);
-        setAvailability(participant.availability || []);
-        setStep(2); // Переходим сразу к выбору времени
+        
+        // Получаем доступные даты из диапазона события
+        if (event.dateRange) {
+          const availableDates = generateDateRange(event.dateRange.start, event.dateRange.end);
+          
+          // Создаем новый объект для доступности
+          const newAvailability: AvailabilityMap = {};
+          
+          // Проверяем доступность участника для каждой даты
+          availableDates.forEach(date => {
+            // Безопасное получение слотов
+            try {
+              // Первый вариант: использование as unknown as
+              const participantAvailability = participant.availability as unknown as AvailabilityMap;
+              if (participantAvailability && participantAvailability[date]) {
+                const slots = participantAvailability[date];
+                if (Array.isArray(slots)) {
+                  newAvailability[date] = [...slots];
+                }
+              }
+            } catch (e) {
+              console.error(`Error processing date ${date}:`, e);
+            }
+          });
+          
+          // Устанавливаем данные о доступности
+          setAvailability(newAvailability);
+          
+          // Выбираем дату для отображения
+          const datesWithSlots = Object.keys(newAvailability);
+          if (datesWithSlots.length > 0) {
+            setSelectedDate(datesWithSlots[0]);
+          } else if (availableDates.length > 0) {
+            setSelectedDate(availableDates[0]);
+          }
+        }
+        
+        // Переходим к шагу выбора времени
+        setStep(2);
       }
     }
   }, [isEditMode, editName, event]);
+
+  // Генерируем список доступных дат из диапазона
+  useEffect(() => {
+    if (event?.dateRange) {
+      const dates = generateDateRange(event.dateRange.start, event.dateRange.end);
+      setAvailableDates(dates);
+      // Если нет выбранной даты, выбираем первую
+      if (!selectedDate && dates.length > 0) {
+        setSelectedDate(dates[0]);
+      }
+    }
+  }, [event?.dateRange, selectedDate]);
 
   // Генерируем случайный цвет аватарки при загрузке (только если не в режиме редактирования)
   useEffect(() => {
@@ -185,20 +259,62 @@ export default function JoinEvent() {
     return name.charAt(0).toUpperCase();
   };
 
-  // Обновляет доступность для конкретного временного слота
-  const toggleTimeSlot = (timeSlot: string) => {
-    setAvailability(prev => {
-      if (prev.includes(timeSlot)) {
-        return prev.filter(slot => slot !== timeSlot);
-      } else {
-        return [...prev, timeSlot];
-      }
+  // Генерирует список дат в заданном диапазоне
+  const generateDateRange = (startDate: string, endDate: string) => {
+    const dates = [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    let current = new Date(start);
+    while (current <= end) {
+      dates.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return dates;
+  };
+
+  // Форматирует дату для отображения
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('ru-RU', { 
+      weekday: 'long', 
+      day: 'numeric', 
+      month: 'long'
     });
   };
 
-  // Проверяет, выбран ли временной слот
+  // Обновляет доступность для конкретного временного слота
+  const toggleTimeSlot = (timeSlot: string) => {
+    if (!selectedDate) return;
+    
+    setAvailability(prev => {
+      const newAvailability = { ...prev };
+      // Инициализируем массив слотов для выбранной даты, если его еще нет
+      if (!newAvailability[selectedDate]) {
+        newAvailability[selectedDate] = [];
+      }
+      
+      if (newAvailability[selectedDate].includes(timeSlot)) {
+        // Удаляем слот из выбранных
+        newAvailability[selectedDate] = newAvailability[selectedDate].filter(slot => slot !== timeSlot);
+        // Если массив слотов пустой, удаляем дату из объекта
+        if (newAvailability[selectedDate].length === 0) {
+          delete newAvailability[selectedDate];
+        }
+      } else {
+        // Добавляем слот к выбранным
+        newAvailability[selectedDate] = [...newAvailability[selectedDate], timeSlot];
+      }
+      
+      return newAvailability;
+    });
+  };
+
+  // Проверяет, выбран ли временной слот для текущей даты
   const isTimeSlotSelected = (timeSlot: string) => {
-    return availability.includes(timeSlot);
+    if (!selectedDate || !availability[selectedDate]) return false;
+    return availability[selectedDate].includes(timeSlot);
   };
 
   // Проверяет, разрешено ли имя в списке участников
@@ -237,7 +353,8 @@ export default function JoinEvent() {
   // Отправка данных о доступности
   const submitAvailability = () => {
     // Проверка, что хотя бы один временной слот выбран
-    if (availability.length === 0) {
+    const totalSlotsSelected = Object.values(availability).reduce((total, slots) => total + slots.length, 0);
+    if (totalSlotsSelected === 0) {
       setErrorMessage('Пожалуйста, выберите хотя бы один временной слот');
       return;
     }
@@ -350,7 +467,7 @@ export default function JoinEvent() {
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
               <div className="mb-4">
                 <p className="font-medium mb-2">
-                  Дата: {formattedWeekday}, {formattedDate}
+                  Дата: {formattedWeekday}, {formattedDateRange}
                 </p>
                 <p>Время: с {event?.timeRange?.start} до {event?.timeRange?.end}</p>
               </div>
@@ -440,7 +557,7 @@ export default function JoinEvent() {
               </button>
             </div>
           ) : (
-            // Шаг 2: Выбор времени
+            // Шаг 2: Выбор даты и времени
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
               <div className="flex items-center gap-3 mb-6">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xl font-bold ${selectedAvatar}`}>
@@ -449,7 +566,7 @@ export default function JoinEvent() {
                 <div>
                   <p className="font-medium">{userName}</p>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {formattedWeekday}, {formattedDate}
+                    {formattedDateRange}
                   </p>
                 </div>
               </div>
@@ -458,35 +575,77 @@ export default function JoinEvent() {
                 <h2 className="text-xl font-semibold mb-4">
                   {isEditMode ? 'Измените ваше доступное время:' : 'Когда вы свободны?'}
                 </h2>
-                <p className="mb-4 text-gray-600 dark:text-gray-300">
-                  Выберите временные слоты, в которые вы можете присутствовать:
-                </p>
                 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
-                  {timeSlots.map((timeSlot) => (
-                    <button
-                      key={timeSlot}
-                      type="button"
-                      className={`py-3 px-2 border rounded-lg text-center transition-colors ${
-                        isTimeSlotSelected(timeSlot)
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600'
-                      }`}
-                      onClick={() => toggleTimeSlot(timeSlot)}
-                    >
-                      {timeSlot}
-                    </button>
-                  ))}
+                {/* Выбор даты */}
+                <div className="mb-6">
+                  <h3 className="font-medium mb-3">Выберите дату:</h3>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {availableDates.map(date => (
+                      <button
+                        key={date}
+                        type="button"
+                        className={`py-2 px-3 border rounded-lg text-center transition-colors ${
+                          selectedDate === date
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600'
+                        } ${
+                          availability[date] && availability[date].length > 0
+                            ? 'ring-2 ring-green-500 dark:ring-green-400'
+                            : ''
+                        }`}
+                        onClick={() => setSelectedDate(date)}
+                      >
+                        {formatDate(date)}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {selectedDate && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                      Выбрана дата: <span className="font-medium">{formatDate(selectedDate)}</span>
+                    </p>
+                  )}
                 </div>
                 
-                {availability.length > 0 && (
+                {/* Выбор временных слотов */}
+                {selectedDate && (
+                  <>
+                    <h3 className="font-medium mb-3">Выберите доступное время для этой даты:</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
+                      {timeSlots.map((timeSlot) => (
+                        <button
+                          key={timeSlot}
+                          type="button"
+                          className={`py-3 px-2 border rounded-lg text-center transition-colors ${
+                            isTimeSlotSelected(timeSlot)
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600'
+                          }`}
+                          onClick={() => toggleTimeSlot(timeSlot)}
+                        >
+                          {timeSlot}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                
+                {/* Итоговая доступность */}
+                {Object.keys(availability).length > 0 && (
                   <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-md">
-                    <p className="font-medium mb-2">Выбранные слоты:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {availability.sort().map(slot => (
-                        <span key={slot} className="bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-100 px-3 py-1 rounded-lg text-sm">
-                          {slot}
-                        </span>
+                    <p className="font-medium mb-2">Ваши выбранные даты и слоты:</p>
+                    <div className="space-y-2">
+                      {Object.entries(availability).map(([date, slots]) => (
+                        <div key={date} className="mb-3">
+                          <p className="font-medium">{formatDate(date)}:</p>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {(Array.isArray(slots) ? [...slots].sort() : []).map(slot => (
+                              <span key={`${date}-${slot}`} className="bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-100 px-3 py-1 rounded-lg text-sm">
+                                {slot}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -505,7 +664,7 @@ export default function JoinEvent() {
                   type="button"
                   className="sm:flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded text-center transition-colors"
                   onClick={submitAvailability}
-                  disabled={availability.length === 0}
+                  disabled={Object.keys(availability).length === 0}
                 >
                   {isEditMode ? 'Сохранить изменения' : 'Отправить'}
                 </button>

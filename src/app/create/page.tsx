@@ -34,7 +34,10 @@ export default function CreateEvent() {
   const router = useRouter();
   const [eventName, setEventName] = useState('');
   const [eventDescription, setEventDescription] = useState('');
-  const [eventDate, setEventDate] = useState('');
+  const [dateRange, setDateRange] = useState({
+    startDate: '',
+    endDate: ''
+  });
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('18:00');
   const [eventId, setEventId] = useState('');
@@ -67,23 +70,99 @@ export default function CreateEvent() {
     setParticipantsList(participantsList.filter(p => p !== name));
   };
 
-  // Установка текущей даты
+  // Установка диапазона "сегодня"
   const setTodayDate = () => {
-    const today = new Date();
-    setEventDate(today.toISOString().split('T')[0]);
+    const today = new Date().toISOString().split('T')[0];
+    setDateRange({
+      startDate: today,
+      endDate: today
+    });
   };
 
-  // Установка даты "завтра"
+  // Установка диапазона "завтра"
   const setTomorrowDate = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    setEventDate(tomorrow.toISOString().split('T')[0]);
+    const tomorrowDate = tomorrow.toISOString().split('T')[0];
+    setDateRange({
+      startDate: tomorrowDate,
+      endDate: tomorrowDate
+    });
+  };
+
+  // Установка диапазона "эта неделя"
+  const setThisWeekRange = () => {
+    const today = new Date();
+    const endOfWeek = new Date();
+    const dayOfWeek = today.getDay();
+    const daysUntilEndOfWeek = 6 - dayOfWeek; // 6 = суббота (последний день недели)
+    
+    endOfWeek.setDate(today.getDate() + daysUntilEndOfWeek);
+    
+    setDateRange({
+      startDate: today.toISOString().split('T')[0],
+      endDate: endOfWeek.toISOString().split('T')[0]
+    });
+  };
+
+  // Обработка изменения начальной даты
+  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newStartDate = e.target.value;
+    
+    setDateRange(prev => {
+      // Если конечная дата не задана или меньше начальной, устанавливаем её равной начальной
+      if (!prev.endDate || new Date(prev.endDate) < new Date(newStartDate)) {
+        return {
+          startDate: newStartDate,
+          endDate: newStartDate
+        };
+      }
+      
+      return {
+        ...prev,
+        startDate: newStartDate
+      };
+    });
+  };
+
+  // Обработка изменения конечной даты
+  const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newEndDate = e.target.value;
+    
+    setDateRange(prev => {
+      // Если начальная дата не задана, устанавливаем её равной конечной
+      if (!prev.startDate) {
+        return {
+          startDate: newEndDate,
+          endDate: newEndDate
+        };
+      }
+      
+      // Если новая конечная дата меньше начальной, устанавливаем обе даты равными конечной
+      if (new Date(newEndDate) < new Date(prev.startDate)) {
+        return {
+          startDate: newEndDate,
+          endDate: newEndDate
+        };
+      }
+      
+      return {
+        ...prev,
+        endDate: newEndDate
+      };
+    });
   };
 
   const createEvent = () => {
     // Валидация временного диапазона
     if (startTime >= endTime) {
       alert('Время начала должно быть раньше времени окончания');
+      return;
+    }
+
+    // Валидация диапазона дат
+    if (!dateRange.startDate || !dateRange.endDate) {
+      alert('Необходимо указать начальную и конечную дату');
       return;
     }
 
@@ -95,7 +174,10 @@ export default function CreateEvent() {
       id: newEventId,
       name: eventName,
       description: eventDescription,
-      date: eventDate,
+      dateRange: {
+        start: dateRange.startDate,
+        end: dateRange.endDate
+      },
       timeRange: {
         start: startTime,
         end: endTime
@@ -164,11 +246,11 @@ export default function CreateEvent() {
               </div>
               
               <div className="mb-6">
-                <label htmlFor="eventDate" className="block mb-2 font-medium">
-                  Дата
+                <label className="block mb-2 font-medium">
+                  Диапазон дат
                 </label>
                 
-                <div className="flex flex-wrap gap-2 mb-2">
+                <div className="flex flex-wrap gap-2 mb-3">
                   <button
                     type="button"
                     onClick={setTodayDate}
@@ -183,23 +265,67 @@ export default function CreateEvent() {
                   >
                     Завтра
                   </button>
+                  <button
+                    type="button"
+                    onClick={setThisWeekRange}
+                    className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-3 py-2 rounded-md transition-colors text-sm"
+                  >
+                    Эта неделя
+                  </button>
                 </div>
                 
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="startDate" className="block mb-1 text-sm text-gray-600 dark:text-gray-400">
+                      Начальная дата
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <input
+                        type="date"
+                        id="startDate"
+                        className="w-full pl-10 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"
+                        value={dateRange.startDate}
+                        onChange={handleStartDateChange}
+                        required
+                      />
+                    </div>
                   </div>
-                  <input
-                    type="date"
-                    id="eventDate"
-                    className="w-full pl-10 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"
-                    value={eventDate}
-                    onChange={(e) => setEventDate(e.target.value)}
-                    required
-                  />
+                  <div>
+                    <label htmlFor="endDate" className="block mb-1 text-sm text-gray-600 dark:text-gray-400">
+                      Конечная дата
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <input
+                        type="date"
+                        id="endDate"
+                        className="w-full pl-10 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"
+                        value={dateRange.endDate}
+                        onChange={handleEndDateChange}
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
+                
+                {dateRange.startDate && dateRange.endDate && dateRange.startDate !== dateRange.endDate && (
+                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                    Выбран диапазон: {' '}
+                    <span className="font-medium">
+                      {new Date(dateRange.startDate).toLocaleDateString('ru-RU')} - {new Date(dateRange.endDate).toLocaleDateString('ru-RU')}
+                    </span>
+                    {' '} ({Math.round((new Date(dateRange.endDate).getTime() - new Date(dateRange.startDate).getTime()) / (1000 * 60 * 60 * 24) + 1)} дн.)
+                  </p>
+                )}
               </div>
               
               <div className="mb-6">
@@ -296,7 +422,7 @@ export default function CreateEvent() {
                 type="button"
                 className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-md text-center transition-colors"
                 onClick={createEvent}
-                disabled={!eventName || !eventDate}
+                disabled={!eventName || !dateRange.startDate || !dateRange.endDate}
               >
                 Создать событие
               </button>
@@ -326,9 +452,12 @@ export default function CreateEvent() {
                     <div>
                       <p className="font-medium">{eventName}</p>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {new Date(eventDate).toLocaleDateString('ru-RU', { 
-                          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
-                        })}
+                        {dateRange.startDate === dateRange.endDate 
+                          ? new Date(dateRange.startDate).toLocaleDateString('ru-RU', { 
+                              weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+                            })
+                          : `${new Date(dateRange.startDate).toLocaleDateString('ru-RU')} - ${new Date(dateRange.endDate).toLocaleDateString('ru-RU')}`
+                        }
                       </p>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         {startTime} - {endTime}

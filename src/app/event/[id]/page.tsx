@@ -33,14 +33,17 @@ function ClientOnly({ children }: { children: React.ReactNode }) {
 interface Participant {
   name: string;
   avatarColor: string;
-  availability: string[];
+  availability: { [date: string]: string[] };
 }
 
 interface Event {
   id: string;
   name: string;
   description: string;
-  date: string;
+  dateRange: {
+    start: string;
+    end: string;
+  };
   timeRange: {
     start: string;
     end: string;
@@ -56,9 +59,12 @@ export default function EventPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
-  const [commonSlots, setCommonSlots] = useState<string[]>([]);
-  const [popularSlots, setPopularSlots] = useState<{slot: string, count: number}[]>([]);
-  const [formattedDate, setFormattedDate] = useState<string>('');
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [commonSlots, setCommonSlots] = useState<{[date: string]: string[]}>({});
+  const [popularSlots, setPopularSlots] = useState<{[date: string]: {slot: string, count: number}[]}>({});
+  const [optimalDateTime, setOptimalDateTime] = useState<{date: string, slots: string[]} | null>(null);
+  const [formattedDateRange, setFormattedDateRange] = useState<string>('');
 
   useEffect(() => {
     if (eventId) {
@@ -66,20 +72,30 @@ export default function EventPage() {
     }
   }, [eventId]);
 
-  // Форматирование даты на клиенте для избежания ошибок гидратации
+  // Форматирование диапазона дат на клиенте для избежания ошибок гидратации
   useEffect(() => {
-    if (event?.date) {
+    if (event?.dateRange) {
       try {
-        const date = new Date(event.date);
-        setFormattedDate(date.toLocaleDateString('ru-RU', { 
-          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
-        }));
+        const startDate = new Date(event.dateRange.start);
+        const endDate = new Date(event.dateRange.end);
+        
+        if (event.dateRange.start === event.dateRange.end) {
+          // Если одна дата
+          setFormattedDateRange(startDate.toLocaleDateString('ru-RU', { 
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+          }));
+        } else {
+          // Если диапазон дат
+          const startFormatted = startDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+          const endFormatted = endDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+          setFormattedDateRange(`${startFormatted} - ${endFormatted}`);
+        }
       } catch (error) {
-        console.error('Error formatting date:', error);
-        setFormattedDate('');
+        console.error('Error formatting date range:', error);
+        setFormattedDateRange('');
       }
     }
-  }, [event?.date]);
+  }, [event?.dateRange]);
 
   // Загрузка данных события
   const loadEvent = () => {
@@ -95,8 +111,18 @@ export default function EventPage() {
         // Генерируем временные слоты
         const slots = generateTimeSlots(foundEvent.timeRange.start, foundEvent.timeRange.end);
         setTimeSlots(slots);
+        
+        // Генерируем список дат
+        const dates = generateDateRange(foundEvent.dateRange.start, foundEvent.dateRange.end);
+        setAvailableDates(dates);
+        
+        // Выбираем первую дату по умолчанию
+        if (dates.length > 0) {
+          setSelectedDate(dates[0]);
+        }
+        
         // Находим общие слоты для всех участников
-        findCommonAndPopularSlots(slots, foundEvent.participants);
+        findCommonAndPopularSlots(slots, foundEvent.participants, dates);
       } else {
         setError('Событие не найдено');
       }
@@ -129,50 +155,141 @@ export default function EventPage() {
     return slots;
   };
 
+  // Генерирует список дат в заданном диапазоне
+  const generateDateRange = (startDate: string, endDate: string) => {
+    const dates = [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    let current = new Date(start);
+    while (current <= end) {
+      dates.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return dates;
+  };
+
   // Находит общие слоты для всех участников и популярные слоты для большинства
-  const findCommonAndPopularSlots = (slots: string[], participants: Participant[]) => {
-    if (!participants || participants.length === 0) {
-      setCommonSlots([]);
-      setPopularSlots([]);
+  const findCommonAndPopularSlots = (slots: string[], participants: Participant[], dates: string[]) => {
+    if (!participants || participants.length === 0 || dates.length === 0) {
+      setCommonSlots({});
+      setPopularSlots({});
+      setOptimalDateTime(null);
       return;
     }
 
-    // Создаем счетчик для каждого временного слота
-    const slotCounts: Record<string, number> = {};
-    slots.forEach(slot => {
-      slotCounts[slot] = 0;
-    });
-
-    // Подсчитываем количество участников, доступных в каждый слот
-    participants.forEach(participant => {
-      const availableSlots = participant.availability || [];
-      availableSlots.forEach(slot => {
-        if (slotCounts[slot] !== undefined) {
-          slotCounts[slot]++;
-        }
+    const commonByDate: {[date: string]: string[]} = {};
+    const popularByDate: {[date: string]: {slot: string, count: number}[]} = {};
+    
+    // Для каждой даты вычисляем слоты
+    dates.forEach(date => {
+      // Создаем счетчик для каждого временного слота
+      const slotCounts: Record<string, number> = {};
+      slots.forEach(slot => {
+        slotCounts[slot] = 0;
       });
+
+      // Подсчитываем количество участников, доступных в каждый слот
+      participants.forEach(participant => {
+        const availableSlots = participant.availability[date] || [];
+        availableSlots.forEach(slot => {
+          if (slotCounts[slot] !== undefined) {
+            slotCounts[slot]++;
+          }
+        });
+      });
+
+      // Находим слоты, доступные для всех участников в эту дату
+      const common = slots.filter(slot => slotCounts[slot] === participants.length);
+      if (common.length > 0) {
+        commonByDate[date] = common;
+      }
+
+      // Находим популярные слоты (где большинство участников свободны)
+      const popularSlotsArray = slots
+        .map(slot => ({ slot, count: slotCounts[slot] }))
+        .filter(item => item.count > 0 && item.count < participants.length)
+        .sort((a, b) => b.count - a.count); // Сортируем по количеству участников (от большего к меньшему)
+      
+      // Берем только слоты, где доступно более 50% участников
+      const threshold = Math.ceil(participants.length / 2);
+      const popularSlotsFiltered = popularSlotsArray.filter(item => item.count >= threshold);
+      
+      if (popularSlotsFiltered.length > 0) {
+        popularByDate[date] = popularSlotsFiltered;
+      }
     });
-
-    // Находим слоты, доступные для всех участников
-    const common = slots.filter(slot => slotCounts[slot] === participants.length);
-    setCommonSlots(common);
-
-    // Находим популярные слоты (где большинство участников свободны)
-    const popularSlotsArray = slots
-      .map(slot => ({ slot, count: slotCounts[slot] }))
-      .filter(item => item.count > 0 && item.count < participants.length)
-      .sort((a, b) => b.count - a.count); // Сортируем по количеству участников (от большего к меньшему)
     
-    // Берем только слоты, где доступно более 50% участников
-    const threshold = Math.ceil(participants.length / 2);
-    const popularSlotsFiltered = popularSlotsArray.filter(item => item.count >= threshold);
+    setCommonSlots(commonByDate);
+    setPopularSlots(popularByDate);
     
-    setPopularSlots(popularSlotsFiltered);
+    // Находим оптимальное время и дату
+    findOptimalDateTime(commonByDate, popularByDate, participants);
   };
 
-  // Проверяет, доступен ли участник в указанный слот
-  const isParticipantAvailable = (participant: Participant, slot: string) => {
-    return participant.availability?.includes(slot) || false;
+  // Находит оптимальное время и дату для встречи
+  const findOptimalDateTime = (
+    commonByDate: {[date: string]: string[]},
+    popularByDate: {[date: string]: {slot: string, count: number}[]},
+    participants: Participant[]
+  ) => {
+    // Если есть даты с общими слотами для всех участников
+    const datesWithCommonSlots = Object.keys(commonByDate);
+    if (datesWithCommonSlots.length > 0) {
+      // Берем первую дату с наибольшим количеством общих слотов
+      const bestDate = datesWithCommonSlots.sort((a, b) => 
+        commonByDate[b].length - commonByDate[a].length)[0];
+      
+      setOptimalDateTime({
+        date: bestDate,
+        slots: commonByDate[bestDate]
+      });
+      return;
+    }
+    
+    // Иначе ищем дату с наибольшим количеством участников в одном слоте
+    const datesWithPopularSlots = Object.keys(popularByDate);
+    if (datesWithPopularSlots.length > 0) {
+      let bestDate = '';
+      let bestSlot = '';
+      let maxCount = 0;
+      
+      datesWithPopularSlots.forEach(date => {
+        const mostPopularSlot = popularByDate[date][0]; // Уже отсортированы
+        if (mostPopularSlot.count > maxCount) {
+          maxCount = mostPopularSlot.count;
+          bestDate = date;
+          bestSlot = mostPopularSlot.slot;
+        }
+      });
+      
+      if (bestDate) {
+        setOptimalDateTime({
+          date: bestDate,
+          slots: [bestSlot]
+        });
+        return;
+      }
+    }
+    
+    setOptimalDateTime(null);
+  };
+
+  // Форматирует дату для отображения
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('ru-RU', { 
+      weekday: 'long', 
+      day: 'numeric', 
+      month: 'long'
+    });
+  };
+
+  // Проверяет, доступен ли участник в указанный слот в указанную дату
+  const isParticipantAvailable = (participant: Participant, date: string, slot: string) => {
+    const availableSlots = participant.availability[date] || [];
+    return availableSlots.includes(slot);
   };
 
   // Генерирует инициалы для аватарки
@@ -180,41 +297,28 @@ export default function EventPage() {
     return name.charAt(0).toUpperCase();
   };
 
-  // Возвращает количество участников, доступных в данном слоте
-  const getAvailableCount = (slot: string) => {
+  // Возвращает количество участников, доступных в данном слоте в указанную дату
+  const getAvailableCount = (date: string, slot: string) => {
     if (!event) return 0;
-    return event.participants.filter(p => isParticipantAvailable(p, slot)).length;
+    return event.participants.filter(p => isParticipantAvailable(p, date, slot)).length;
   };
 
-  // Форматирует дату для отображения
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ru-RU', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
+  // Получить доступные слоты для участника в указанную дату
+  const getParticipantAvailableSlotsForDate = (participant: Participant, date: string) => {
+    return [...(participant.availability[date] || [])].sort();
   };
 
-  // Получить доступные слоты для участника в отсортированном виде
-  const getParticipantAvailableSlots = (participant: Participant) => {
-    return [...(participant.availability || [])].sort();
-  };
-
-  // Получить недоступные популярные слоты для участника
-  const getUnavailablePopularSlots = (participant: Participant) => {
-    return popularSlots
-      .filter(item => !isParticipantAvailable(participant, item.slot))
-      .sort((a, b) => b.count - a.count);
-  };
-
-  // Получить рекомендации для участника
-  const getRecommendationsForParticipant = (participant: Participant) => {
-    const unavailablePopularSlots = getUnavailablePopularSlots(participant);
-    if (unavailablePopularSlots.length === 0) return null;
+  // Получить все доступные слоты для участника по всем датам
+  const getParticipantAllAvailableSlots = (participant: Participant) => {
+    const result: {[date: string]: string[]} = {};
     
-    // Получаем слот с наибольшим количеством доступных участников
-    return unavailablePopularSlots[0];
+    Object.keys(participant.availability || {}).forEach(date => {
+      if (participant.availability[date]?.length > 0) {
+        result[date] = [...participant.availability[date]].sort();
+      }
+    });
+    
+    return result;
   };
 
   if (loading) {
@@ -275,7 +379,7 @@ export default function EventPage() {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span>{formattedDate}</span>
+                <span>{formattedDateRange}</span>
               </div>
               <div className="flex items-center gap-1">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -333,11 +437,51 @@ export default function EventPage() {
               </div>
             ) : (
               <>
-                {commonSlots.length > 0 && (
+                {optimalDateTime && (
                   <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/40 border border-green-100 dark:border-green-900 rounded-lg">
                     <h3 className="font-bold mb-2">🎉 Оптимальное время для встречи:</h3>
                     <p className="text-lg font-medium text-green-800 dark:text-green-300">
-                      {commonSlots.sort().join(', ')}
+                      {formatDate(optimalDateTime.date)}, {optimalDateTime.slots.sort().join(', ')}
+                    </p>
+                    <p className="mt-2 text-sm text-green-800 dark:text-green-200">
+                      {Object.keys(commonSlots).length > 0 
+                        ? `В это время свободны все ${event.participants.length} участников`
+                        : `В это время свободно большинство участников`
+                      }
+                    </p>
+                  </div>
+                )}
+
+                {/* Выбор даты для просмотра результатов */}
+                <div className="mb-6">
+                  <h3 className="font-medium mb-3">Выберите дату для просмотра результатов:</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {availableDates.map(date => (
+                      <button
+                        key={date}
+                        type="button"
+                        className={`py-2 px-3 border rounded-lg text-center transition-colors ${
+                          selectedDate === date
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600'
+                        } ${
+                          commonSlots[date] && commonSlots[date].length > 0
+                            ? 'ring-2 ring-green-500 dark:ring-green-400'
+                            : ''
+                        }`}
+                        onClick={() => setSelectedDate(date)}
+                      >
+                        {formatDate(date)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedDate && commonSlots[selectedDate] && commonSlots[selectedDate].length > 0 && (
+                  <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/40 border border-green-100 dark:border-green-900 rounded-lg">
+                    <h3 className="font-bold mb-2">✅ Оптимальное время для {formatDate(selectedDate)}:</h3>
+                    <p className="text-lg font-medium text-green-800 dark:text-green-300">
+                      {commonSlots[selectedDate].sort().join(', ')}
                     </p>
                     <p className="mt-2 text-sm text-green-800 dark:text-green-200">
                       В это время свободны все {event.participants.length} участников
@@ -345,12 +489,12 @@ export default function EventPage() {
                   </div>
                 )}
 
-                {commonSlots.length === 0 && popularSlots.length > 0 && (
+                {selectedDate && (!commonSlots[selectedDate] || commonSlots[selectedDate].length === 0) && popularSlots[selectedDate] && popularSlots[selectedDate].length > 0 && (
                   <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/40 border border-yellow-100 dark:border-yellow-900 rounded-lg">
-                    <h3 className="font-bold mb-2">⚠️ Нет времени, удобного для всех участников</h3>
+                    <h3 className="font-bold mb-2">⚠️ Нет времени, удобного для всех участников ({formatDate(selectedDate)})</h3>
                     <p className="mb-2">Наиболее популярные варианты:</p>
                     <div className="space-y-2">
-                      {popularSlots.slice(0, 3).map(slot => (
+                      {popularSlots[selectedDate].slice(0, 3).map(slot => (
                         <div key={slot.slot} className="flex justify-between items-center">
                           <span className="font-medium text-yellow-800 dark:text-yellow-300">{slot.slot}</span>
                           <span className="bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded-lg text-sm">
@@ -365,11 +509,12 @@ export default function EventPage() {
                 <div className="space-y-4">
                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                     <div className="p-4 bg-gray-50 dark:bg-gray-700 font-medium border-b border-gray-200 dark:border-gray-700">
-                      Время / Участники
+                      {selectedDate ? `Участники / ${formatDate(selectedDate)}` : 'Участники / Все даты'}
                     </div>
                     <div className="divide-y divide-gray-200 dark:divide-gray-700">
                       {event.participants.map(participant => {
-                        const recommendation = getRecommendationsForParticipant(participant);
+                        const availableSlotsForDate = selectedDate ? getParticipantAvailableSlotsForDate(participant, selectedDate) : [];
+                        const allAvailableSlots = getParticipantAllAvailableSlots(participant);
                         
                         return (
                           <div key={participant.name} className="p-4">
@@ -392,31 +537,47 @@ export default function EventPage() {
                               </Link>
                             </div>
                             
-                            {getParticipantAvailableSlots(participant).length > 0 ? (
-                              <div className="ml-12">
-                                <div className="flex flex-wrap gap-2 mb-2">
-                                  {getParticipantAvailableSlots(participant).map(slot => (
-                                    <span key={slot} className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-3 py-1 rounded-lg text-sm">
-                                      {slot}
-                                    </span>
-                                  ))}
-                                </div>
-                                
-                                {recommendation && (
-                                  <div className="mt-2 bg-yellow-50 dark:bg-yellow-900/20 p-2 rounded-md border border-yellow-100 dark:border-yellow-900/40">
-                                    <p className="text-sm text-yellow-800 dark:text-yellow-300 flex items-center gap-1">
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                      Рекомендация: слот <strong>{recommendation.slot}</strong> удобен для {recommendation.count} из {event.participants.length} участников
-                                    </p>
+                            {selectedDate ? (
+                              // Отображаем слоты для выбранной даты
+                              availableSlotsForDate.length > 0 ? (
+                                <div className="ml-12">
+                                  <div className="flex flex-wrap gap-2 mb-2">
+                                    {availableSlotsForDate.map(slot => (
+                                      <span key={`${selectedDate}-${slot}`} className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-3 py-1 rounded-lg text-sm">
+                                        {slot}
+                                      </span>
+                                    ))}
                                   </div>
-                                )}
-                              </div>
+                                </div>
+                              ) : (
+                                <p className="text-gray-500 dark:text-gray-400 ml-12 text-sm italic">
+                                  Не указаны слоты доступности для этой даты
+                                </p>
+                              )
                             ) : (
-                              <p className="text-gray-500 dark:text-gray-400 ml-12 text-sm italic">
-                                Не указаны слоты доступности
-                              </p>
+                              // Отображаем все доступные слоты по всем датам
+                              Object.keys(allAvailableSlots).length > 0 ? (
+                                <div className="ml-12">
+                                  <div className="space-y-2">
+                                    {Object.entries(allAvailableSlots).map(([date, slots]) => (
+                                      <div key={date} className="mb-2">
+                                        <p className="font-medium text-sm">{formatDate(date)}:</p>
+                                        <div className="flex flex-wrap gap-2 mt-1">
+                                          {slots.map(slot => (
+                                            <span key={`${date}-${slot}`} className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-3 py-1 rounded-lg text-sm">
+                                              {slot}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-gray-500 dark:text-gray-400 ml-12 text-sm italic">
+                                  Не указаны слоты доступности
+                                </p>
+                              )
                             )}
                           </div>
                         );
